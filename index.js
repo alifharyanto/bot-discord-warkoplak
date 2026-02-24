@@ -2,7 +2,7 @@ require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, NoSubscriberBehavior, getVoiceConnection } = require('@discordjs/voice');
 const { addSpeechEvent } = require('discord-speech-recognition');
-const { MsEdgeTTS } = require('ms-edge-tts'); // Fix library name
+const { EdgeTTS } = require('@edge-tts/node'); // Library TTS terbaru & stabil
 const express = require('express');
 const path = require('path');
 const axios = require('axios');
@@ -22,7 +22,7 @@ const client = new Client({
 });
 
 addSpeechEvent(client); 
-const tts = new MsEdgeTTS();
+const tts = new EdgeTTS();
 
 let isTalkingMode = false;
 const playlist = [
@@ -77,16 +77,16 @@ client.on('messageCreate', async (message) => {
 client.on('speech', async (msg) => {
     if (!isTalkingMode || !msg.content) return;
 
-    console.log(`Dengar: ${msg.content}`);
+    console.log(`Dengar suara: ${msg.content}`);
     const aiReply = await getAIResponse(msg.content);
     const connection = getVoiceConnection(msg.guild.id);
 
     if (connection) {
         const filePath = path.join(__dirname, 'tts.mp3');
         try {
-            // Set suara Cowok Indonesia (Ardi)
-            await tts.setMetadata("id-ID-ArdiNeural", "audio-24khz-48kbitrate-mono-mp3");
-            await tts.toFile(filePath, aiReply);
+            // Proses generate suara dan simpan ke file
+            const audioBuffer = await tts.ttsPromise(aiReply, 'id-ID-ArdiNeural');
+            await fs.promises.writeFile(filePath, audioBuffer);
             
             const resource = createAudioResource(filePath);
             const player = createAudioPlayer();
@@ -139,7 +139,6 @@ function connectToVoice(channel) {
     function playNext() {
         const trackPath = playlist[currentIndex];
         
-        // Cek file ada atau tidak
         if (!fs.existsSync(trackPath)) {
             console.error(`File musik tidak ditemukan: ${trackPath}`);
             return;
