@@ -76,7 +76,7 @@ client.on('speech', async (msg) => {
 
     console.log(`Dengar suara: ${msg.content}`);
     const aiReply = await getAIResponse(msg.content);
-    
+
     const connection = getVoiceConnection(msg.guild.id);
     if (connection) {
         // Mengubah teks balasan AI jadi suara (TTS)
@@ -98,9 +98,9 @@ async function getAIResponse(prompt) {
                 { role: "user", content: prompt }
             ]
         }, {
-            headers: { 
+            headers: {
                 'Authorization': `Bearer ${process.env.GROK_API_KEY}`, // Key gsk_ masuk sini
-                'Content-Type': 'application/json' 
+                'Content-Type': 'application/json'
             }
         });
         return response.data.choices[0].message.content;
@@ -136,3 +136,13 @@ function connectToVoice(channel) {
 }
 
 client.login(process.env.TOKEN);
+
+process.on('unhandledRejection', (reason) => {
+    console.error('Unhandled Rejection:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+});
+
+module.exports = client;
