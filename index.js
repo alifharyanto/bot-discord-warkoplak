@@ -1,6 +1,8 @@
+require('dotenv').config(); // Memanggil file .env
 const { Client, GatewayIntentBits } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, NoSubscriberBehavior } = require('@discordjs/voice');
 const express = require('express');
+const path = require('path');
 
 // --- 1. WEB SERVER UNTUK KEEP-ALIVE ---
 const app = express();
@@ -17,12 +19,15 @@ const client = new Client({
     ]
 });
 
-// Playlist: Masukkan nama file mp3 kamu di sini
-const playlist = ['/music/2.23AM.mp3', '/music/3.03PM.mp3'];
+// Playlist: Gunakan ./ agar mencari di dalam folder proyek
+const playlist = [
+    path.join(__dirname, 'music', '2.23AM.mp3'),
+    path.join(__dirname, 'music', '3.03PM.mp3')
+];
 let currentIndex = 0;
 
 client.on('ready', () => {
-    console.log(`Logged in as ${client.user.tag}!`);
+    console.log(`✅ Logged in as ${client.user.tag}!`);
 });
 
 client.on('messageCreate', async (message) => {
@@ -47,42 +52,38 @@ function connectToVoice(channel) {
         behaviors: { noSubscriber: NoSubscriberBehavior.Play }
     });
 
-    // Fungsi untuk memutar lagu berdasarkan index
     function playNextTrack() {
         const trackPath = playlist[currentIndex];
-        console.log(`Sedang memutar: ${trackPath}`);
+        console.log(`🎵 Sedang memutar: ${trackPath}`);
 
         const resource = createAudioResource(trackPath, { inlineVolume: true });
         
-        // Volume kecil (0.05 = 5%). Bisa kamu ubah sesuai selera
-        resource.volume.setVolume(20); 
+        // PENTING: Volume di discord.js voice menggunakan skala 0 sampai 1.
+        // 1 = 100%. Jika kamu isi 20, suaranya akan pecah/rusak.
+        // Gunakan 0.2 untuk volume 20%.
+        resource.volume.setVolume(0.2); 
 
         player.play(resource);
         
-        // Update index untuk lagu berikutnya
         currentIndex = (currentIndex + 1) % playlist.length;
     }
 
-    // Mulai putaran pertama
     playNextTrack();
     connection.subscribe(player);
 
-    // Event ketika lagu habis (Idle)
     player.on(AudioPlayerStatus.Idle, () => {
         console.log("Lagu selesai, pindah ke lagu berikutnya...");
         playNextTrack();
     });
 
-    // Fitur Reconnect otomatis jika dc
     connection.on('disconnected', () => {
-        console.log("Terputus! Mencoba menyambung kembali...");
+        console.log("⚠️ Terputus! Mencoba menyambung kembali dalam 5 detik...");
         setTimeout(() => connectToVoice(channel), 5000);
     });
 
-    // Menangani error agar bot tidak crash
     player.on('error', error => {
-        console.error(`Error: ${error.message}`);
-        playNextTrack(); // Jika error, coba putar lagu berikutnya
+        console.error(`❌ Error: ${error.message}`);
+        playNextTrack(); 
     });
 }
 
