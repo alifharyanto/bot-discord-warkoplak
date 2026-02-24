@@ -2,10 +2,11 @@ require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, NoSubscriberBehavior, getVoiceConnection } = require('@discordjs/voice');
 const { addSpeechEvent } = require('discord-speech-recognition');
-const edgeTTS = require('edge-tts-api');
+const { MsEdgeTTS } = require('ms-edge-tts'); // Fix library name
 const express = require('express');
 const path = require('path');
 const axios = require('axios');
+const fs = require('fs');
 
 const app = express();
 app.get('/', (req, res) => res.send('Warkoplak Bot is Online!'));
@@ -19,7 +20,9 @@ const client = new Client({
         GatewayIntentBits.GuildVoiceStates
     ]
 });
-addSpeechEvent(client); // Mengaktifkan fitur mendengar suara
+
+addSpeechEvent(client); 
+const tts = new MsEdgeTTS();
 
 let isTalkingMode = false;
 const playlist = [
@@ -70,36 +73,46 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-// --- FITUR MENDENGAR SUARA DI VC ---
+// --- EVENT SPEECH (MENDENGAR & TTS) ---
 client.on('speech', async (msg) => {
     if (!isTalkingMode || !msg.content) return;
 
-    console.log(`Dengar suara: ${msg.content}`);
+    console.log(`Dengar: ${msg.content}`);
     const aiReply = await getAIResponse(msg.content);
-
     const connection = getVoiceConnection(msg.guild.id);
+
     if (connection) {
-        // Mengubah teks balasan AI jadi suara (TTS)
-        const ttsUrl = edgeTTS.getAudioUrl(aiReply, { lang: 'id-ID', voice: 'id-ID-ArdiNeural' });
-        const resource = createAudioResource(ttsUrl);
-        const player = createAudioPlayer();
-        player.play(resource);
-        connection.subscribe(player);
+        const filePath = path.join(__dirname, 'tts.mp3');
+        try {
+            // Set suara Cowok Indonesia (Ardi)
+            await tts.setMetadata("id-ID-ArdiNeural", "audio-24khz-48kbitrate-mono-mp3");
+            await tts.toFile(filePath, aiReply);
+            
+            const resource = createAudioResource(filePath);
+            const player = createAudioPlayer();
+            player.play(resource);
+            connection.subscribe(player);
+        } catch (err) {
+            console.error("Gagal memproses TTS:", err);
+        }
     }
 });
 
-// --- FUNGSI AI (FIX URL GROQ) ---
+// --- FUNGSI AI (GROQ LLAMA 3.3) ---
 async function getAIResponse(prompt) {
     try {
         const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
             model: "llama-3.3-70b-versatile",
             messages: [
-                { role: "system", content: "Kamu asisten Warkoplak dari FX Intelligence. Gaya santai, singkat, mengikuti suasana obrolan, bahasa nya gaul, jika petanyaan ilmu jawab singkat saja agar tidak melebihi teks token dan jawab ringan santai, jika kamu ditanya kamu siapa kamu adalah bot ai discord warkoplak dari FX Intelligence  " },
+                { 
+                    role: "system", 
+                    content: "Kamu asisten Warkoplak dari FX Intelligence. Gaya santai, singkat, mengikuti suasana obrolan, bahasanya gaul, jika pertanyaan ilmu jawab singkat saja agar tidak melebihi teks token dan jawab ringan santai. Jika kamu ditanya kamu siapa kamu adalah bot ai discord warkoplak dari FX Intelligence." 
+                },
                 { role: "user", content: prompt }
             ]
         }, {
             headers: {
-                'Authorization': `Bearer ${process.env.GROK_API_KEY}`, // Key gsk_ masuk sini
+                'Authorization': `Bearer ${process.env.GROK_API_KEY}`,
                 'Content-Type': 'application/json'
             }
         });
@@ -110,6 +123,7 @@ async function getAIResponse(prompt) {
     }
 }
 
+// --- FUNGSI MUSIK PENJAGA ---
 function connectToVoice(channel) {
     const connection = joinVoiceChannel({
         channelId: channel.id,
@@ -124,9 +138,17 @@ function connectToVoice(channel) {
 
     function playNext() {
         const trackPath = playlist[currentIndex];
+        
+        // Cek file ada atau tidak
+        if (!fs.existsSync(trackPath)) {
+            console.error(`File musik tidak ditemukan: ${trackPath}`);
+            return;
+        }
+
         const resource = createAudioResource(trackPath, { inlineVolume: true });
         resource.volume.setVolume(0.3);
         player.play(resource);
+        console.log(`🎵 Muter lagu: ${path.basename(trackPath)}`);
         currentIndex = (currentIndex + 1) % playlist.length;
     }
 
@@ -135,8 +157,7 @@ function connectToVoice(channel) {
     player.on(AudioPlayerStatus.Idle, playNext);
 }
 
-client.login(process.env.TOKEN);
-
+// --- ERROR HANDLING ---
 process.on('unhandledRejection', (reason) => {
     console.error('Unhandled Rejection:', reason);
 });
@@ -145,4 +166,4 @@ process.on('uncaughtException', (error) => {
     console.error('Uncaught Exception:', error);
 });
 
-module.exports = client;
+client.login(process.env.TOKEN);
