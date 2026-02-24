@@ -1,15 +1,14 @@
-require('dotenv').config(); // Memanggil file .env
+require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, NoSubscriberBehavior } = require('@discordjs/voice');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, NoSubscriberBehavior, getVoiceConnection } = require('@discordjs/voice');
 const express = require('express');
 const path = require('path');
+const axios = require('axios');
 
-// --- 1. WEB SERVER UNTUK KEEP-ALIVE ---
 const app = express();
-app.get('/', (req, res) => res.send('Bot Penjaga is Online!'));
+app.get('/', (req, res) => res.send('Bot Penjaga AI is Online!'));
 app.listen(process.env.PORT || 3000);
 
-// --- 2. KONFIGURASI BOT ---
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -19,7 +18,7 @@ const client = new Client({
     ]
 });
 
-// Playlist: Gunakan ./ agar mencari di dalam folder proyek
+// Playlist music
 const playlist = [
     path.join(__dirname, 'music', '2.23AM.mp3'),
     path.join(__dirname, 'music', '3.03PM.mp3')
@@ -31,12 +30,52 @@ client.on('ready', () => {
 });
 
 client.on('messageCreate', async (message) => {
+    if (message.author.bot) return;
+
+    // --- FITUR PENJAGA ---
     if (message.content === '!penjaga') {
         const channel = message.member?.voice.channel;
-        if (!channel) return message.reply("Kamu harus di dalam Voice Channel dulu!");
-
+        if (!channel) return message.reply("Masuk ke Voice Channel dulu!");
         connectToVoice(channel);
-        message.reply(`🛡️ **Standby!** Memutar playlist penjaga di **${channel.name}**.`);
+        message.reply(`🛡️ **Standby!** Bot masuk ke **${channel.name}**.`);
+    }
+
+    // --- FITUR KELUAR ---
+    if (message.content === '!keluar') {
+        const connection = getVoiceConnection(message.guild.id);
+        if (connection) {
+            connection.destroy();
+            message.reply("👋 Aku keluar dari Voice Channel. Sampai jumpa!");
+        } else {
+            message.reply("Aku lagi nggak di Voice Channel mana pun.");
+        }
+    }
+
+    // --- FITUR AI (GROK) ---
+    if (message.content.startsWith('!ai ')) {
+        const prompt = message.content.slice(4);
+        message.channel.sendTyping();
+
+        try {
+            const response = await axios.post('https://api.x.ai/v1/chat/completions', {
+                model: "llama-3.3-70b-versatile", // atau model ringan lainnya
+                messages: [
+                    { role: "system", content: "Kamu adalah asisten AI yang ramah di server Discord Warkoplak. Jawab dengan singkat, santai, gaul, asik, dan enak di ajak ngobrol sesuai dengan topik kamu bisa mengigat percakapan yg ringan sajaa bisa juga jadi teman curhat dan enak lah yang bikin orang nyaman berbicara dengan mu" },
+                    { role: "user", content: prompt }
+                ]
+            }, {
+                headers: {
+                    'Authorization': `Bearer ${process.env.GROK_API_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const aiReply = response.data.choices[0].message.content;
+            message.reply(aiReply);
+        } catch (error) {
+            console.error(error);
+            message.reply("Maaf, otakku lagi loading... (Error API)");
+        }
     }
 });
 
@@ -45,7 +84,7 @@ function connectToVoice(channel) {
         channelId: channel.id,
         guildId: channel.guild.id,
         adapterCreator: channel.guild.voiceAdapterCreator,
-        selfDeaf: true,
+        selfDeaf: false, // Diubah jadi false agar tidak deafen total
     });
 
     const player = createAudioPlayer({
@@ -54,17 +93,14 @@ function connectToVoice(channel) {
 
     function playNextTrack() {
         const trackPath = playlist[currentIndex];
-        console.log(`🎵 Sedang memutar: ${trackPath}`);
-
+        // Pastikan file ada sebelum diputar
         const resource = createAudioResource(trackPath, { inlineVolume: true });
         
-        // PENTING: Volume di discord.js voice menggunakan skala 0 sampai 1.
-        // 1 = 100%. Jika kamu isi 20, suaranya akan pecah/rusak.
-        // Gunakan 0.2 untuk volume 20%.
-        resource.volume.setVolume(0.2); 
+        // Coba volume 0.5 (50%) dulu biar kedengeran
+        resource.volume.setVolume(0.5); 
 
         player.play(resource);
-        
+        console.log(`🎵 Memutar: ${trackPath}`);
         currentIndex = (currentIndex + 1) % playlist.length;
     }
 
@@ -72,18 +108,12 @@ function connectToVoice(channel) {
     connection.subscribe(player);
 
     player.on(AudioPlayerStatus.Idle, () => {
-        console.log("Lagu selesai, pindah ke lagu berikutnya...");
         playNextTrack();
     });
 
-    connection.on('disconnected', () => {
-        console.log("⚠️ Terputus! Mencoba menyambung kembali dalam 5 detik...");
-        setTimeout(() => connectToVoice(channel), 5000);
-    });
-
     player.on('error', error => {
-        console.error(`❌ Error: ${error.message}`);
-        playNextTrack(); 
+        console.error(`❌ Audio Error: ${error.message}`);
+        playNextTrack();
     });
 }
 
