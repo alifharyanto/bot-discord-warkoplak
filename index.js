@@ -6,7 +6,7 @@ const path = require('path');
 const axios = require('axios');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Penjaga AI is Online!'));
+app.get('/', (req, res) => res.send('Warkoplak Bot is Online!'));
 app.listen(process.env.PORT || 3000);
 
 const client = new Client({
@@ -18,7 +18,7 @@ const client = new Client({
     ]
 });
 
-// Playlist music
+// Playlist music - Pastikan folder 'music' ada di root project
 const playlist = [
     path.join(__dirname, 'music', '2.23AM.mp3'),
     path.join(__dirname, 'music', '3.03PM.mp3')
@@ -26,7 +26,7 @@ const playlist = [
 let currentIndex = 0;
 
 client.on('ready', () => {
-    console.log(`✅ Logged in as ${client.user.tag}!`);
+    console.log(`✅ ${client.user.tag} siap nongkrong di Warkoplak!`);
 });
 
 client.on('messageCreate', async (message) => {
@@ -35,9 +35,10 @@ client.on('messageCreate', async (message) => {
     // --- FITUR PENJAGA ---
     if (message.content === '!penjaga') {
         const channel = message.member?.voice.channel;
-        if (!channel) return message.reply("Masuk ke Voice Channel dulu!");
+        if (!channel) return message.reply("Masuk ke Voice Channel dulu, Bos!");
+        
         connectToVoice(channel);
-        message.reply(`🛡️ **Standby!** Bot masuk ke **${channel.name}**.`);
+        message.reply(`🛡️ **Otw!** Aku jagain room **${channel.name}** sambil putar musik.`);
     }
 
     // --- FITUR KELUAR ---
@@ -45,22 +46,24 @@ client.on('messageCreate', async (message) => {
         const connection = getVoiceConnection(message.guild.id);
         if (connection) {
             connection.destroy();
-            message.reply("👋 Aku keluar dari Voice Channel. Sampai jumpa!");
+            message.reply("👋 Cabut dulu ya, jangan kangen!");
         } else {
-            message.reply("Aku lagi nggak di Voice Channel mana pun.");
+            message.reply("Aku lagi nggak di room mana-mana, santai aja.");
         }
     }
 
     // --- FITUR AI (GROK) ---
     if (message.content.startsWith('!ai ')) {
         const prompt = message.content.slice(4);
+        if (!process.env.GROK_API_KEY) return message.reply("API Key Grok belum dipasang di .env!");
+
         message.channel.sendTyping();
 
         try {
             const response = await axios.post('https://api.x.ai/v1/chat/completions', {
-                model: "llama-3.3-70b-versatile", // atau model ringan lainnya
+                model: "grok-beta",
                 messages: [
-                    { role: "system", content: "Kamu adalah asisten AI yang ramah di server Discord Warkoplak. Jawab dengan singkat, santai, gaul, asik, dan enak di ajak ngobrol sesuai dengan topik kamu bisa mengigat percakapan yg ringan sajaa bisa juga jadi teman curhat dan enak lah yang bikin orang nyaman berbicara dengan mu" },
+                    { role: "system", content: "Kamu adalah asisten AI di server Discord Warkoplak. Gaya bicaramu santai, lucu, pakai bahasa gaul dikit, dan singkat saja kalau jawab., dan kamu bisa menjadi teman curhat dan searching singkat saja jika di tanya kamu siapa kamu adalah bot warkoplak dari FX Intelligence" },
                     { role: "user", content: prompt }
                 ]
             }, {
@@ -70,11 +73,11 @@ client.on('messageCreate', async (message) => {
                 }
             });
 
-            const aiReply = response.data.choices[0].message.content;
-            message.reply(aiReply);
-        } catch (error) {
-            console.error(error);
-            message.reply("Maaf, otakku lagi loading... (Error API)");
+            const reply = response.data.choices[0].message.content;
+            message.reply(reply);
+        } catch (err) {
+            console.error(err);
+            message.reply("Duh, server AI-nya lagi pusing. Coba lagi nanti!");
         }
     }
 });
@@ -84,7 +87,8 @@ function connectToVoice(channel) {
         channelId: channel.id,
         guildId: channel.guild.id,
         adapterCreator: channel.guild.voiceAdapterCreator,
-        selfDeaf: false, // Diubah jadi false agar tidak deafen total
+        selfDeaf: false, // Penting: Biar bot tetep bisa 'denger' dan stabil di VC
+        selfMute: false
     });
 
     const player = createAudioPlayer({
@@ -93,14 +97,14 @@ function connectToVoice(channel) {
 
     function playNextTrack() {
         const trackPath = playlist[currentIndex];
-        // Pastikan file ada sebelum diputar
+        // Pastikan file mp3-nya benar-benar ada di folder music
         const resource = createAudioResource(trackPath, { inlineVolume: true });
         
-        // Coba volume 0.5 (50%) dulu biar kedengeran
-        resource.volume.setVolume(0.5); 
+        // Set volume ke 0.3 (30%) biar cukup keras tapi nggak pecah
+        resource.volume.setVolume(0.3); 
 
         player.play(resource);
-        console.log(`🎵 Memutar: ${trackPath}`);
+        console.log(`🎵 Sekarang muter: ${path.basename(trackPath)}`);
         currentIndex = (currentIndex + 1) % playlist.length;
     }
 
@@ -108,12 +112,13 @@ function connectToVoice(channel) {
     connection.subscribe(player);
 
     player.on(AudioPlayerStatus.Idle, () => {
+        console.log("Lagu habis, ganti lagu berikutnya...");
         playNextTrack();
     });
 
     player.on('error', error => {
         console.error(`❌ Audio Error: ${error.message}`);
-        playNextTrack();
+        playNextTrack(); 
     });
 }
 
