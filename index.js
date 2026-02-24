@@ -8,6 +8,7 @@ const path = require('path');
 const axios = require('axios');
 
 const app = express();
+app.get('/', (req, res) => res.send('Warkoplak Bot is Online!'));
 app.listen(process.env.PORT || 3000);
 
 const client = new Client({
@@ -18,20 +19,23 @@ const client = new Client({
         GatewayIntentBits.GuildVoiceStates
     ]
 });
-addSpeechEvent(client);
+addSpeechEvent(client); // Mengaktifkan fitur mendengar suara
 
 let isTalkingMode = false;
 const playlist = [
-    path.join(__dirname, 'music', '2.23AM.mp3'), 
+    path.join(__dirname, 'music', '2.23AM.mp3'),
     path.join(__dirname, 'music', '3.03PM.mp3')
 ];
 let currentIndex = 0;
 
-client.on('ready', () => console.log(`✅ ${client.user.tag} siap nongkrong!`));
+client.on('ready', () => {
+    console.log(`✅ ${client.user.tag} siap nongkrong di Warkoplak!`);
+});
 
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
+    // --- KONTROL MODE BICARA ---
     if (message.content === '!bicara') {
         isTalkingMode = true;
         return message.reply("🎤 **Mode Bicara AKTIF.** Aku dengerin kamu di VC sekarang.");
@@ -41,29 +45,41 @@ client.on('messageCreate', async (message) => {
         return message.reply("🔇 **Mode Bicara MATI.**");
     }
 
+    // --- FITUR PENJAGA (MASUK VC) ---
     if (message.content === '!penjaga') {
         const channel = message.member?.voice.channel;
-        if (!channel) return message.reply("Masuk VC dulu!");
+        if (!channel) return message.reply("Masuk VC dulu, Bos!");
         connectToVoice(channel);
-        message.reply("🛡️ Room dijaga!");
+        message.reply(`🛡️ **Standby!** Jagain room **${channel.name}**.`);
     }
 
+    // --- FITUR KELUAR ---
+    if (message.content === '!keluar') {
+        const connection = getVoiceConnection(message.guild.id);
+        if (connection) {
+            connection.destroy();
+            message.reply("👋 Cabut dulu!");
+        }
+    }
+
+    // --- FITUR CHAT AI (!ai) ---
     if (message.content.startsWith('!ai ')) {
-        const reply = await getAIResponse(message.content.slice(4));
+        const prompt = message.content.slice(4);
+        const reply = await getAIResponse(prompt);
         message.reply(reply);
     }
 });
 
-// --- FITUR MENDENGAR & MERESPON DENGAN SUARA ---
+// --- FITUR MENDENGAR SUARA DI VC ---
 client.on('speech', async (msg) => {
     if (!isTalkingMode || !msg.content) return;
 
-    console.log(`User bicara: ${msg.content}`);
+    console.log(`Dengar suara: ${msg.content}`);
     const aiReply = await getAIResponse(msg.content);
     
     const connection = getVoiceConnection(msg.guild.id);
     if (connection) {
-        // TTS pake suara robot Indonesia
+        // Mengubah teks balasan AI jadi suara (TTS)
         const ttsUrl = edgeTTS.getAudioUrl(aiReply, { lang: 'id-ID', voice: 'id-ID-ArdiNeural' });
         const resource = createAudioResource(ttsUrl);
         const player = createAudioPlayer();
@@ -72,21 +88,25 @@ client.on('speech', async (msg) => {
     }
 });
 
+// --- FUNGSI AI (FIX URL GROQ) ---
 async function getAIResponse(prompt) {
     try {
-        const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', { // FIXED: URL ke GROQ
+        const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
             model: "llama-3.3-70b-versatile",
             messages: [
-                { role: "system", content: "Kamu asisten Warkoplak, santai, lucu, bot dari FX Intelligence. Jawab singkat." },
+                { role: "system", content: "Kamu asisten Warkoplak dari FX Intelligence. Gaya santai, singkat, mengikuti suasana obrolan, bahasa nya gaul, jika petanyaan ilmu jawab singkat saja agar tidak melebihi teks token dan jawab ringan santai, jika kamu ditanya kamu siapa kamu adalah bot ai discord warkoplak dari FX Intelligence  " },
                 { role: "user", content: prompt }
             ]
         }, {
-            headers: { 'Authorization': `Bearer ${process.env.GROK_API_KEY}` } // Key gsk_ kamu masuk sini
+            headers: { 
+                'Authorization': `Bearer ${process.env.GROK_API_KEY}`, // Key gsk_ masuk sini
+                'Content-Type': 'application/json' 
+            }
         });
         return response.data.choices[0].message.content;
-    } catch (e) {
-        console.error("AI Error:", e.response?.data || e.message);
-        return "Aduh, lagi dapet error 400 nih. Cek API Key!";
+    } catch (err) {
+        console.error("Error API:", err.response?.data || err.message);
+        return "Duh, otakku korslet. Cek koneksi atau API Key!";
     }
 }
 
@@ -98,11 +118,13 @@ function connectToVoice(channel) {
         selfDeaf: false,
     });
 
-    const player = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Play } });
-    
+    const player = createAudioPlayer({
+        behaviors: { noSubscriber: NoSubscriberBehavior.Play }
+    });
+
     function playNext() {
-        if (playlist.length === 0) return;
-        const resource = createAudioResource(playlist[currentIndex], { inlineVolume: true });
+        const trackPath = playlist[currentIndex];
+        const resource = createAudioResource(trackPath, { inlineVolume: true });
         resource.volume.setVolume(0.3);
         player.play(resource);
         currentIndex = (currentIndex + 1) % playlist.length;
@@ -114,13 +136,3 @@ function connectToVoice(channel) {
 }
 
 client.login(process.env.TOKEN);
-
-process.on('unhandledRejection', (reason) => {
-    console.error('Unhandled Rejection:', reason);
-});
-
-process.on('uncaughtException', (error) => {
-    console.error('Uncaught Exception:', error);
-});
-
-module.exports = client;
